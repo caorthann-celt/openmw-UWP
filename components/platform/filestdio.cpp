@@ -31,7 +31,11 @@ namespace Platform::File
 
     Handle open(const std::filesystem::path& filename)
     {
+#ifdef OPENMW_UWP
+        FILE* handle = _wfopen(filename.c_str(), L"rb");
+#else
         FILE* handle = fopen(filename.c_str(), "rb");
+#endif
         if (handle == nullptr)
         {
             throw std::system_error(errno, std::generic_category(),

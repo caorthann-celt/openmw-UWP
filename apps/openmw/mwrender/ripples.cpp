@@ -39,15 +39,8 @@ namespace MWRender
 
         addPrimitiveSet(new osg::DrawArrays(osg::PrimitiveSet::TRIANGLES, 0, 3));
 
-#ifdef __APPLE__
-        // we can not trust Apple :)
-        mUseCompute = false;
-#else
         constexpr float minimumGLVersionRequiredForCompute = 4.4f;
-        osg::GLExtensions& exts = SceneUtil::getGLExtensions();
-        mUseCompute = exts.glVersion >= minimumGLVersionRequiredForCompute
-            && exts.glslLanguageVersion >= minimumGLVersionRequiredForCompute;
-#endif
+        mUseCompute = SceneUtil::isComputeShaderSupported(minimumGLVersionRequiredForCompute);
 
         for (size_t i = 0; i < mState.size(); ++i)
         {

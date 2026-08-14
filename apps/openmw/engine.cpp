@@ -999,6 +999,14 @@ void OMW::Engine::go()
 
     mViewer->addEventHandler(statsHandler);
 
+#ifdef OPENMW_UWP
+    if (Settings::Manager::getOrDefault<bool>("show fps", "UWP", false))
+    {
+        mViewer->getEventQueue()->keyPress(osgGA::GUIEventAdapter::KEY_F3);
+        mViewer->getEventQueue()->keyRelease(osgGA::GUIEventAdapter::KEY_F3);
+    }
+#endif
+
     osg::ref_ptr<Resource::StatsHandler> resourcesHandler = new Resource::StatsHandler(stats.is_open(), *mVFS);
     mViewer->addEventHandler(resourcesHandler);
 

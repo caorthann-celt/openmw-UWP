@@ -5,16 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
-
-#ifdef _MSC_VER
-// TODO: why is this necessary? this has /external:I
-#pragma warning(push)
-#pragma warning(disable : 4702)
-#endif
-#include <boost/iostreams/stream.hpp>
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+#include <optional>
 
 #include <components/crashcatcher/crashcatcher.hpp>
 #include <components/files/conversion.hpp>
@@ -22,9 +13,11 @@
 #include <components/misc/strings/lower.hpp>
 
 #ifdef _WIN32
-#include <components/crashcatcher/windowscrashcatcher.hpp>
-#include <components/files/conversion.hpp>
 #include <components/misc/windows.hpp>
+#endif
+
+#if defined(_WIN32) && !defined(OPENMW_UWP)
+#include <components/crashcatcher/windowscrashcatcher.hpp>
 
 #include <Knownfolders.h>
 
@@ -44,7 +37,7 @@
 
 namespace Debug
 {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(OPENMW_UWP)
     bool isRedirected(DWORD nStdHandle)
     {
         DWORD fileType = GetFileType(GetStdHandle(nStdHandle));
@@ -108,7 +101,32 @@ namespace Debug
 
     namespace
     {
-        class DebugOutputBase : public boost::iostreams::sink
+        template <class Sink>
+        class StreamBuffer : public std::streambuf
+        {
+        public:
+            void open(Sink sink) { mSink.emplace(std::move(sink)); }
+
+        protected:
+            std::streamsize xsputn(const char* str, std::streamsize size) override
+            {
+                return mSink ? mSink->write(str, size) : 0;
+            }
+
+            int_type overflow(int_type value) override
+            {
+                if (traits_type::eq_int_type(value, traits_type::eof()))
+                    return traits_type::not_eof(value);
+
+                const char c = traits_type::to_char_type(value);
+                return mSink && mSink->write(&c, 1) == 1 ? value : traits_type::eof();
+            }
+
+        private:
+            std::optional<Sink> mSink;
+        };
+
+        class DebugOutputBase
         {
         public:
             virtual std::streamsize write(const char* str, std::streamsize size)
@@ -232,7 +250,9 @@ namespace Debug
 
         bool useColoredOutput()
         {
-#if defined(_WIN32)
+#if defined(OPENMW_UWP)
+            return false;
+#elif defined(_WIN32)
             if (std::getenv("NO_COLOR") != nullptr)
                 return false;
 
@@ -356,12 +376,12 @@ namespace Debug
         static std::ofstream logfile;
 
 #if defined(_WIN32) && defined(_DEBUG)
-        static boost::iostreams::stream_buffer<DebugOutput> sb;
+        static StreamBuffer<DebugOutput> sb;
 #else
-        static boost::iostreams::stream_buffer<Tee<Identity, Coloured>> standardOut;
-        static boost::iostreams::stream_buffer<Tee<Identity, Coloured>> standardErr;
-        static boost::iostreams::stream_buffer<Tee<Buffer, Coloured>> bufferedOut;
-        static boost::iostreams::stream_buffer<Tee<Buffer, Coloured>> bufferedErr;
+        static StreamBuffer<Tee<Identity, Coloured>> standardOut;
+        static StreamBuffer<Tee<Identity, Coloured>> standardErr;
+        static StreamBuffer<Tee<Buffer, Coloured>> bufferedOut;
+        static StreamBuffer<Tee<Buffer, Coloured>> bufferedErr;
 #endif
     }
 
@@ -419,7 +439,7 @@ namespace Debug
         std::cerr.rdbuf(&standardErr);
 #endif
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(OPENMW_UWP)
         if (Crash::CrashCatcher::instance())
         {
             Crash::CrashCatcher::instance()->updateDumpPath(logDir);
@@ -430,7 +450,7 @@ namespace Debug
     int wrapApplication(
         int (*innerApplication)(int argc, char* argv[]), int argc, char* argv[], std::string_view appName)
     {
-#if defined _WIN32
+#if defined(_WIN32) && !defined(OPENMW_UWP)
         (void)attachParentConsole();
         SetConsoleOutputCP(CP_UTF8);
 #endif
@@ -459,7 +479,7 @@ namespace Debug
             if (const auto env = std::getenv("OPENMW_DISABLE_CRASH_CATCHER");
                 env == nullptr || Misc::StringUtils::toNumeric<int>(env, 0) == 0)
             {
-#if defined(_WIN32)
+#if defined(_WIN32) && !defined(OPENMW_UWP)
                 const std::string crashDumpName = Misc::StringUtils::lowerCase(appName) + "-crash.dmp";
                 const std::string freezeDumpName = Misc::StringUtils::lowerCase(appName) + "-freeze.dmp";
                 std::filesystem::path dumpDirectory = std::filesystem::temp_directory_path();
@@ -482,6 +502,11 @@ namespace Debug
         }
         catch (const std::exception& e)
         {
+#if defined(OPENMW_UWP)
+            OutputDebugStringA("OpenMW fatal error: ");
+            OutputDebugStringA(e.what());
+            OutputDebugStringA("\n");
+#endif
 #if (defined(__APPLE__) || defined(__linux) || defined(__unix) || defined(__posix))
             if (!isatty(fileno(stdin)))
 #endif

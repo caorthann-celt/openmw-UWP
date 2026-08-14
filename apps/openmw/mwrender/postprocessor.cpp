@@ -18,6 +18,7 @@
 #include <components/resource/scenemanager.hpp>
 #include <components/sceneutil/color.hpp>
 #include <components/sceneutil/depth.hpp>
+#include <components/sceneutil/glextensions.hpp>
 #include <components/sceneutil/nodecallback.hpp>
 #include <components/settings/values.hpp>
 #include <components/shader/shadermanager.hpp>
@@ -576,6 +577,13 @@ namespace MWRender
             {
                 Log(Debug::Warning) << "Technique " << technique->getName() << " requires GLSL version "
                                     << technique->getGLSLVersion() << " which is unsupported by your hardware.";
+                continue;
+            }
+
+            if (technique->usesComputeShaders() && !SceneUtil::isComputeShaderSupported(4.3f))
+            {
+                Log(Debug::Warning) << "Technique " << technique->getName()
+                                    << " uses compute shaders which are unsupported by your hardware.";
                 continue;
             }
 

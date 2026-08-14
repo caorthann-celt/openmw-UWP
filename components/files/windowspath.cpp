@@ -1,6 +1,6 @@
 #include "windowspath.hpp"
 
-#if defined(_WIN32) || defined(__WINDOWS__)
+#if (defined(_WIN32) || defined(__WINDOWS__)) && !defined(OPENMW_UWP)
 
 #include <algorithm>
 #include <array>
@@ -168,4 +168,4 @@ namespace Files
 
 } /* namespace Files */
 
-#endif /* defined(_WIN32) || defined(__WINDOWS__) */
+#endif

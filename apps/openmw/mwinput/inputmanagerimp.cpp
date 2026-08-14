@@ -59,7 +59,11 @@ namespace MWInput
     {
         mControlsDisabled = disableControls;
 
+#ifdef OPENMW_UWP
+        mInputWrapper->setMouseVisible(false);
+#else
         mInputWrapper->setMouseVisible(MWBase::Environment::get().getWindowManager()->getCursorVisible());
+#endif
         mInputWrapper->capture(disableEvents);
 
         if (disableControls)

@@ -47,6 +47,23 @@ namespace SceneUtil
         return **sGLExtensions.begin();
     }
 
+    bool isComputeShaderSupported(float minimumVersion)
+    {
+#if defined(__APPLE__)
+        return false;
+#elif defined(OPENMW_UWP)
+        // mesa reports compute support here but cannot run these paths reliably
+        return false;
+#else
+        if (!glExtensionsReady())
+            return false;
+
+        osg::GLExtensions& extensions = getGLExtensions();
+        return extensions.glVersion >= minimumVersion && extensions.glslLanguageVersion >= minimumVersion
+            && extensions.glDispatchCompute && extensions.glMemoryBarrier;
+#endif
+    }
+
     GetGLExtensionsOperation::GetGLExtensionsOperation()
         : GraphicsOperation("GetGLExtensionsOperation", false)
     {

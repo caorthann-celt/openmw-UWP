@@ -152,6 +152,8 @@ namespace Fx
 
         bool getLights() const { return mLights; }
 
+        bool usesComputeShaders() const;
+
         const PassList& getPasses() { return mPasses; }
 
         const TexList& getTextures() const { return mTextures; }

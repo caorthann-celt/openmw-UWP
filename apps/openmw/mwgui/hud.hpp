@@ -104,6 +104,9 @@ namespace MWGui
         bool mSpellVisible = true;
         bool mWorldMouseOver = false;
         bool mIsDrowning = false;
+#ifdef OPENMW_UWP
+        bool mOwnMouseEmulationCursor = false;
+#endif
 
         void onWorldClicked(MyGUI::Widget* sender);
         void onWorldMouseOver(MyGUI::Widget* sender, int x, int y);

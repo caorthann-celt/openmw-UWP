@@ -332,6 +332,10 @@ SET(FFVER_OK FALSE)
 
 find_package(FFmpeg REQUIRED COMPONENTS AVCODEC AVFORMAT AVUTIL SWSCALE SWRESAMPLE)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+    list(APPEND FFmpeg_LIBRARIES ws2_32 mfplat mfuuid strmiids ole32 d3d11 d3d12 dxgi bcrypt)
+endif()
+
 if(FFmpeg_FOUND)
     SET(FFVER_OK TRUE)
 
@@ -377,6 +381,10 @@ if (USE_SYSTEM_TINYXML)
 endif()
 
 # Platform specific
+if (CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+    add_compile_definitions(OPENMW_UWP)
+endif()
+
 if (WIN32)
     # Suppress WinMain(), provided by SDL
     add_compile_definitions(SDL_MAIN_HANDLED)
@@ -479,7 +487,7 @@ if(HAVE_MULTIVIEW)
     add_compile_definitions(OSG_HAS_MULTIVIEW)
 endif(HAVE_MULTIVIEW)
 
-set(BOOST_COMPONENTS iostreams program_options)
+set(BOOST_COMPONENTS program_options)
 
 find_package(Boost 1.70.0 CONFIG REQUIRED COMPONENTS ${BOOST_COMPONENTS} OPTIONAL_COMPONENTS ${BOOST_OPTIONAL_COMPONENTS})
 
@@ -487,7 +495,12 @@ if(OPENMW_USE_SYSTEM_MYGUI)
     find_package(MyGUI 3.4.3 REQUIRED)
 endif()
 find_package(SDL2 2.0.20 REQUIRED)
-find_package(OpenAL REQUIRED)
+if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+    find_package(OpenAL CONFIG REQUIRED)
+    set(OPENAL_LIBRARY OpenAL::OpenAL)
+else()
+    find_package(OpenAL REQUIRED)
+endif()
 find_package(ZLIB REQUIRED)
 
 option(USE_LUAJIT "Switch Lua/LuaJit (TRUE is highly recommended)" TRUE)
@@ -557,6 +570,14 @@ pack_resource_file(${OpenMW_SOURCE_DIR}/files/settings-default.cfg
 
 configure_resource_file(${OpenMW_SOURCE_DIR}/files/openmw.appdata.xml
     "${OpenMW_BINARY_DIR}" "openmw.appdata.xml")
+
+if (CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+    set(OPENMW_DATA_OPTION data)
+    set(OPENMW_DATA_LOCAL "?global?")
+else()
+    set(OPENMW_DATA_OPTION data-local)
+    set(OPENMW_DATA_LOCAL "?userdata?data")
+endif()
 
 if (APPLE)
     configure_file(${OpenMW_SOURCE_DIR}/files/openmw.cfg
@@ -738,7 +759,7 @@ if (WIN32)
             set( CMAKE_LIBRARY_OUTPUT_DIRECTORY_${OUTPUTCONFIG} "$(ProjectDir)$(Configuration)" )
         endforeach( OUTPUTCONFIG )
 
-        if (USE_DEBUG_CONSOLE AND BUILD_OPENMW)
+        if (USE_DEBUG_CONSOLE AND BUILD_OPENMW AND NOT CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
             set_target_properties(openmw PROPERTIES LINK_FLAGS_DEBUG "/SUBSYSTEM:CONSOLE")
             set_target_properties(openmw PROPERTIES LINK_FLAGS_RELWITHDEBINFO "/SUBSYSTEM:CONSOLE")
         elseif (BUILD_OPENMW)

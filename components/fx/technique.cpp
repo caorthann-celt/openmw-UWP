@@ -1,5 +1,6 @@
 #include "technique.hpp"
 
+#include <algorithm>
 #include <array>
 #include <format>
 #include <string>
@@ -38,6 +39,12 @@ namespace
 
 namespace Fx
 {
+    bool Technique::usesComputeShaders() const
+    {
+        return std::any_of(
+            mPasses.begin(), mPasses.end(), [](const auto& pass) { return pass->mType == Pass::Type::Compute; });
+    }
+
     VFS::Path::Normalized Technique::makeFileName(std::string_view name)
     {
         std::string fileName(name);

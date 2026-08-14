@@ -1,6 +1,7 @@
 #include "hud.hpp"
 
 #include <MyGUI_Button.h>
+#include <MyGUI_Gui.h>
 #include <MyGUI_ImageBox.h>
 #include <MyGUI_InputManager.h>
 #include <MyGUI_ProgressBar.h>
@@ -93,7 +94,21 @@ namespace MWGui
         getWidget(mWeaponSpellBox, "WeaponSpellName");
 
         getWidget(mCrosshair, "Crosshair");
+#ifdef OPENMW_UWP
+        mMouseEmulationCursor
+            = MyGUI::Gui::getInstance().findWidget<MyGUI::ImageBox>("MouseEmulationCursor", mPrefix, false);
+        if (!mMouseEmulationCursor)
+        {
+            // some UI mods ship an older HUD layout
+            mMouseEmulationCursor = MyGUI::Gui::getInstance().createWidget<MyGUI::ImageBox>(
+                "ImageBox", 0, 0, 32, 32, MyGUI::Align::Default, "Notification");
+            mOwnMouseEmulationCursor = true;
+        }
+        mMouseEmulationCursor->setImageTexture("textures\\tx_cursor.dds");
+        mMouseEmulationCursor->setImageCoord(MyGUI::IntCoord(0, 0, 32, 32));
+#else
         getWidget(mMouseEmulationCursor, "MouseEmulationCursor");
+#endif
 
         mLocalMapZoom = 0.5f;
 
@@ -108,6 +123,10 @@ namespace MWGui
 
     HUD::~HUD()
     {
+#ifdef OPENMW_UWP
+        if (mOwnMouseEmulationCursor)
+            MyGUI::Gui::getInstance().destroyWidget(mMouseEmulationCursor);
+#endif
         mMainWidget->eventMouseLostFocus.clear();
         mMainWidget->eventMouseMove.clear();
         mMainWidget->eventMouseButtonClick.clear();
@@ -484,8 +503,12 @@ namespace MWGui
 
     void HUD::setMouseEmulationCursorPosition(int left, int top)
     {
+#ifdef OPENMW_UWP
+        mMouseEmulationCursor->setCoord(left - 7, top, 32, 32);
+#else
         mMouseEmulationCursor->setPosition(
             left - mMouseEmulationCursor->getWidth() / 2, top - mMouseEmulationCursor->getHeight() / 2);
+#endif
     }
 
     void HUD::setHmsVisible(bool visible)

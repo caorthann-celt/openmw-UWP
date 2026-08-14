@@ -155,6 +155,54 @@ if(BUILD_OPENMW)
 
     target_link_libraries(openmw openmw-lib)
 
+    if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+        include(FetchContent)
+        FetchContent_Declare(imgui
+            GIT_REPOSITORY https://github.com/ocornut/imgui.git
+            GIT_TAG f1cc2ae15e53a861a874c3034aae6798fde194ab
+            GIT_SHALLOW TRUE
+        )
+        FetchContent_MakeAvailable(imgui)
+
+        add_library(openmw-uwp-imgui STATIC
+            ${imgui_SOURCE_DIR}/imgui.cpp
+            ${imgui_SOURCE_DIR}/imgui_draw.cpp
+            ${imgui_SOURCE_DIR}/imgui_tables.cpp
+            ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp
+            ${imgui_SOURCE_DIR}/backends/imgui_impl_sdl2.cpp
+        )
+        target_include_directories(openmw-uwp-imgui PUBLIC
+            ${imgui_SOURCE_DIR}
+            ${imgui_SOURCE_DIR}/backends
+        )
+        set_source_files_properties(${imgui_SOURCE_DIR}/backends/imgui_impl_opengl2.cpp PROPERTIES
+            COMPILE_OPTIONS "/FI SDL_opengl.h"
+        )
+        target_link_libraries(openmw-uwp-imgui PRIVATE SDL2::SDL2 opengl32)
+
+        set(_openmw_uwp_sources
+            ${CMAKE_SOURCE_DIR}/ports/uwp/main.cpp
+            ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_launcher.cpp
+            ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_folder_browser.cpp
+            ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_mod_config.cpp
+        )
+        set_source_files_properties(${_openmw_uwp_sources} PROPERTIES
+            SKIP_PRECOMPILE_HEADERS ON
+            VS_SETTINGS "CompileAsWinRT=true;LanguageStandard=stdcpp17"
+        )
+        target_sources(openmw PRIVATE ${_openmw_uwp_sources})
+        target_link_libraries(openmw
+            openmw-uwp-imgui
+            windowscodecs
+            -nodefaultlib:vccorlib$<$<CONFIG:Debug>:d>
+            -nodefaultlib:msvcrt$<$<CONFIG:Debug>:d>
+            vccorlib$<$<CONFIG:Debug>:d>.lib
+            msvcrt$<$<CONFIG:Debug>:d>.lib
+        )
+        include(${CMAKE_SOURCE_DIR}/ports/uwp/package.cmake)
+    endif()
+
     # Workaround necessary to ensure osgAnimation::MatrixLinearSampler dynamic casts work under Clang
     # NOTE: it's unclear whether the broken behavior is spec-compliant
     if (CMAKE_CXX_COMPILER_ID STREQUAL Clang)

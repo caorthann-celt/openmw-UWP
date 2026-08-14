@@ -19,6 +19,12 @@ namespace Files
     typedef AndroidPath TargetPathType;
 }
 #endif
+#elif defined(OPENMW_UWP)
+#include <ports/uwp/compat/uwp_path.hpp>
+namespace Files
+{
+    typedef UwpPath TargetPathType;
+}
 #elif defined(__WIN32) || defined(__WINDOWS__) || defined(_WIN32)
 #include <components/files/windowspath.hpp>
 namespace Files

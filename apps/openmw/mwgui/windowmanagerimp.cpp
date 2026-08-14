@@ -263,6 +263,9 @@ namespace MWGui
         mLoadingScreen = loadingScreen.get();
         mWindows.push_back(std::move(loadingScreen));
 
+#ifdef OPENMW_UWP
+        MyGUI::PointerManager::getInstance().setVisible(false);
+#else
         // set up the hardware cursor manager
         mCursorManager = std::make_unique<SDLUtil::SDLCursorManager>();
 
@@ -279,6 +282,7 @@ namespace MWGui
 
         // hide mygui's pointer
         MyGUI::PointerManager::getInstance().setVisible(false);
+#endif
 
         mVideoBackground = MyGUI::Gui::getInstance().createWidgetReal<MyGUI::ImageBox>(
             "ImageBox", 0, 0, 1, 1, MyGUI::Align::Default, "Video");
@@ -1383,7 +1387,8 @@ namespace MWGui
 
     void WindowManager::onCursorChange(std::string_view name)
     {
-        mCursorManager->cursorChanged(name);
+        if (mCursorManager)
+            mCursorManager->cursorChanged(name);
     }
 
     void WindowManager::pushGuiMode(GuiMode mode)

@@ -70,6 +70,14 @@ if(NOT OPENMW_USE_SYSTEM_MYGUI)
     )
     FetchContent_MakeAvailable(mygui)
 
+    if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+        get_target_property(_mygui_sources MyGUIEngine SOURCES)
+        list(FILTER _mygui_sources EXCLUDE REGEX "MyGUI_WindowsClipboardHandler\\.cpp$")
+        set_property(TARGET MyGUIEngine PROPERTY SOURCES ${_mygui_sources})
+        target_sources(MyGUIEngine PRIVATE ${PROJECT_SOURCE_DIR}/ports/uwp/compat/mygui_uwp_clipboard.cpp)
+        target_compile_definitions(MyGUIEngine PRIVATE timeGetTime=GetTickCount)
+    endif()
+
     set(MyGUI_INCLUDE_DIRS ${mygui_SOURCE_DIR}/MyGUIEngine/include PARENT_SCOPE)
     set(MyGUI_LIBRARIES MyGUIEngine PARENT_SCOPE)
 endif()
@@ -127,13 +135,21 @@ if(NOT OPENMW_USE_SYSTEM_OSG)
         endif()
     endif()
 
-    # OSGoS branch 3.6
     include(FetchContent)
-    FetchContent_Declare(osg
-        URL https://github.com/OpenMW/osg/archive/01cc2b585c8456a4ff843066b7e1a8715558289f.zip
-        URL_HASH SHA512=9b0a94c1c1d99c767f1857629d43c7a53bfcb74ef760993a121567831e168a1ebbfc10b0c67d7f2241c7b6c6dab2d0e6b876d9f17aca0fabe1a8c86b2279f956
-        SOURCE_DIR fetched/osg
-    )
+    if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+        FetchContent_Declare(osg
+            URL https://github.com/caorthann-celt/OpenSceneGraph-UWP/archive/9749a7a42408a3856b23b9065eb868848216d80f.zip
+            URL_HASH SHA512=4596eb0a63a7584d65f964980defd1eb6af6fdd21132630ebcee030e8b513a2c1611e7267db5112b4b2c5e03379175b27f1722dab2b1a0bb623842722ba03b9c
+            SOURCE_DIR fetched/osg
+        )
+    else()
+        # OSGoS branch 3.6
+        FetchContent_Declare(osg
+            URL https://github.com/OpenMW/osg/archive/01cc2b585c8456a4ff843066b7e1a8715558289f.zip
+            URL_HASH SHA512=9b0a94c1c1d99c767f1857629d43c7a53bfcb74ef760993a121567831e168a1ebbfc10b0c67d7f2241c7b6c6dab2d0e6b876d9f17aca0fabe1a8c86b2279f956
+            SOURCE_DIR fetched/osg
+        )
+    endif()
     FetchContent_MakeAvailable(osg)
 
     set(OPENSCENEGRAPH_INCLUDE_DIRS ${osg_SOURCE_DIR}/include ${osg_BINARY_DIR}/include PARENT_SCOPE)
@@ -178,6 +194,9 @@ if (NOT OPENMW_USE_SYSTEM_SQLITE3)
     FetchContent_MakeAvailable(sqlite3)
 
     add_library(sqlite3 STATIC ${sqlite3_SOURCE_DIR}/sqlite3.c)
+    if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+        target_compile_definitions(sqlite3 PRIVATE SQLITE_OS_WINRT=1)
+    endif()
     target_include_directories(sqlite3 INTERFACE ${sqlite3_SOURCE_DIR}/)
     if (UNIX)
         target_link_libraries(sqlite3 ${CMAKE_DL_LIBS})

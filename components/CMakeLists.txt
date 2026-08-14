@@ -392,14 +392,14 @@ add_component_dir (lua_ui
 copy_resource_file("lua_ui/content.lua" "${OPENMW_RESOURCES_ROOT}" "resources/lua_libs/content.lua")
 
 
-if(WIN32)
+if(WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
     add_component_dir (crashcatcher
         windowscrashcatcher
         windowscrashdumppathhelpers
         windowscrashmonitor
         windowscrashshm
     )
-elseif(NOT ANDROID)
+elseif(NOT ANDROID AND NOT CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
     add_component_dir (crashcatcher
         crashcatcher
     )
@@ -503,7 +503,11 @@ add_component_dir(platform
     file
     )
 
-if (WIN32)
+if (CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+    add_component_dir(platform
+        filestdio
+        )
+elseif (WIN32)
     add_component_dir(platform
         filewin32
         )
@@ -586,6 +590,13 @@ endif()
 
 add_library(components STATIC ${COMPONENT_FILES})
 
+if (CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+    target_sources(components PRIVATE
+        ${CMAKE_SOURCE_DIR}/ports/uwp/compat/uwp_content.cpp
+        ${CMAKE_SOURCE_DIR}/ports/uwp/compat/uwp_path.cpp
+    )
+endif()
+
 if (ANDROID)
     set_property(TARGET components PROPERTY POSITION_INDEPENDENT_CODE ON)
 endif()
@@ -612,7 +623,6 @@ target_link_libraries(components
     ${OPENTHREADS_LIBRARIES}
 
     Boost::program_options
-    Boost::iostreams
 
     SDL2::SDL2
     ${OPENGL_gl_LIBRARY}
@@ -661,7 +671,7 @@ if (OSG_STATIC AND CMAKE_SYSTEM_NAME MATCHES "Linux")
     endif()
 endif()
 
-if (WIN32)
+if (WIN32 AND NOT CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
     target_link_libraries(components shlwapi)
 endif()
 
@@ -693,7 +703,12 @@ if(OSG_STATIC)
             list(APPEND _osg_plugins_static_files ${${_plugin_uc}_LIBRARY})
         else()
             list(APPEND _osg_plugins_static_files $<TARGET_FILE:${${_plugin_uc}_LIBRARY}>)
-            target_link_libraries(components_osg_plugins INTERFACE $<TARGET_PROPERTY:${${_plugin_uc}_LIBRARY},LINK_LIBRARIES>)
+            if(CMAKE_SYSTEM_NAME STREQUAL "WindowsStore")
+                target_link_libraries(components_osg_plugins INTERFACE ${${_plugin_uc}_LIBRARY})
+            else()
+                target_link_libraries(components_osg_plugins INTERFACE
+                    $<TARGET_PROPERTY:${${_plugin_uc}_LIBRARY},LINK_LIBRARIES>)
+            endif()
             add_dependencies(components_osg_plugins ${${_plugin_uc}_LIBRARY})
         endif()
     endforeach()

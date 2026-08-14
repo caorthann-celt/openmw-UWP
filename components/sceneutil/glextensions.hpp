@@ -8,6 +8,7 @@ namespace SceneUtil
 {
     bool glExtensionsReady();
     osg::GLExtensions& getGLExtensions();
+    bool isComputeShaderSupported(float minimumVersion);
 
     class GetGLExtensionsOperation : public osg::GraphicsOperation
     {

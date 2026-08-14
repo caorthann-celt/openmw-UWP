@@ -361,6 +361,9 @@ namespace MWGui
             SDL_GetDisplayMode(screen, i, &mode);
             resolutions.emplace_back(mode.w, mode.h);
         }
+#ifdef OPENMW_UWP
+        resolutions.insert(resolutions.end(), { { 1280, 720 }, { 1920, 1080 }, { 2560, 1440 }, { 3840, 2160 } });
+#endif
         std::sort(resolutions.begin(), resolutions.end(), sortResolutions);
         for (std::pair<int, int>& resolution : resolutions)
         {

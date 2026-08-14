@@ -365,7 +365,8 @@ namespace SceneUtil
         //  1. GL_ARB_shader_storage_buffer_object
         //  2. GL_ARB_shading_language_420pack
         // However, this is not the case in practice and is known to be broken on at least Mesa drivers.
-        bool supportsSSBO = exts && static_cast<int>(exts->glslLanguageVersion * 100) >= 430;
+        bool supportsSSBO = exts && SceneUtil::isComputeShaderSupported(4.3f)
+            && static_cast<int>(exts->glslLanguageVersion * 100) >= 430;
 
         mSupportsClustered = supportsSSBO;
 
