@@ -24,6 +24,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <components/files/conversion.hpp>
@@ -35,6 +36,27 @@ namespace
 
     constexpr int sLogicalWidth = 1920;
     constexpr int sLogicalHeight = 1080;
+
+    std::pair<int, int> launcherSurfaceSize()
+    {
+        try
+        {
+            const auto display = Windows::Graphics::Display::Core::HdmiDisplayInformation::GetForCurrentView();
+            if (display)
+            {
+                const auto mode = display->GetCurrentDisplayMode();
+                const int width = mode->ResolutionWidthInRawPixels;
+                const int height = mode->ResolutionHeightInRawPixels;
+                if (width > 0 && height > 0)
+                    return { width, height };
+            }
+        }
+        catch (...)
+        {
+        }
+
+        return { sLogicalWidth, sLogicalHeight };
+    }
 
     // launcher assets and state
     struct Texture
@@ -1322,11 +1344,6 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMECONTROLLER) != 0)
         return LauncherResult::failed;
-    if (SDL_GL_LoadLibrary("opengl32.dll") < 0)
-    {
-        SDL_Quit();
-        return LauncherResult::failed;
-    }
 
     SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 0);
     SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 0);
@@ -1337,8 +1354,9 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
     SDL_GL_SetAttribute(SDL_GL_BUFFER_SIZE, 32);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-    SDL_Window* window = SDL_CreateWindow("OpenMW", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, sLogicalWidth,
-        sLogicalHeight, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
+    const auto [surfaceWidth, surfaceHeight] = launcherSurfaceSize();
+    SDL_Window* window = SDL_CreateWindow("OpenMW", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, surfaceWidth,
+        surfaceHeight, SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL);
     if (!window)
     {
         SDL_Quit();
@@ -1533,8 +1551,14 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
         }
 
         // draw the next frame
+        int drawableWidth;
+        int drawableHeight;
+        SDL_GL_GetDrawableSize(window, &drawableWidth, &drawableHeight);
         ImGui_ImplOpenGL2_NewFrame();
         ImGui_ImplSDL2_NewFrame();
+        io.DisplaySize = ImVec2(static_cast<float>(sLogicalWidth), static_cast<float>(sLogicalHeight));
+        io.DisplayFramebufferScale = ImVec2(
+            static_cast<float>(drawableWidth) / sLogicalWidth, static_cast<float>(drawableHeight) / sLogicalHeight);
         ImGui::NewFrame();
         drawLauncher(screen, config, browser, settings, selectedModTab, selectedSettingsTab, dataSelection,
             contentSelection, archiveSelection, browserSelection, focusMain, focusModding, focusBrowser,
@@ -1542,9 +1566,6 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
             logo, icons, running, launch);
         ImGui::Render();
 
-        int drawableWidth;
-        int drawableHeight;
-        SDL_GL_GetDrawableSize(window, &drawableWidth, &drawableHeight);
         glViewport(0, 0, drawableWidth, drawableHeight);
         glClearColor(0.047f, 0.055f, 0.071f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
@@ -1559,6 +1580,7 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
     icons.clear();
     logo.clear();
     background.clear();
+    glFinish();
     SDL_GL_DeleteContext(context);
     SDL_DestroyWindow(window);
     SDL_Quit();

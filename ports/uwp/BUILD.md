@@ -135,6 +135,6 @@ RelWithDebInfo packages use the same path under `ports\uwp\build\relwithdebinfo`
 
 That folder contains the MSIX and the files needed to install it.
 
-The package includes the OpenMW resources, launcher, SDL2, Mesa and LuaJIT. SDL2 has the Xbox window sizing and Game Bar fixes used by this build. Mesa comes from [SternXD's UWP 26.2.0 release](https://github.com/SternXD/mesa-uwp/releases/tag/26.2.0), and LuaJIT is pinned to official commit `4886b676a698acc4bbdf54adfabb3e33a8c020e8`.
+The package includes the OpenMW resources, launcher, SDL2, Mesa, libuwp and LuaJIT. SDL2 skips Game Bar setup on Xbox. Mesa is based on [SternXD's UWP 26.2.0 release](https://github.com/SternXD/mesa-uwp/releases/tag/26.2.0) with Daniel Worley's [libuwp framebuffer bridge](https://github.com/worleydl/mesa-uwp/commit/7a7c5d03ae3dad26717671cf2c7ce48c72ff23cc), and LuaJIT is pinned to official commit `4886b676a698acc4bbdf54adfabb3e33a8c020e8`.
 
 The manifest enables code generation for LuaJIT and external storage access for game data. Original Morrowind files are not included and should never be added to the package.
