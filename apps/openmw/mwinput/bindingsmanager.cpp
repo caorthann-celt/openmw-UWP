@@ -590,7 +590,7 @@ namespace MWInput
             A_Jump, A_Inventory, A_Journal, A_Rest, A_Console, A_QuickSave, A_QuickLoad, A_ToggleHUD, A_Screenshot,
             A_QuickKeysMenu, A_QuickKey1, A_QuickKey2, A_QuickKey3, A_QuickKey4, A_QuickKey5, A_QuickKey6, A_QuickKey7,
             A_QuickKey8, A_QuickKey9, A_QuickKey10, A_CycleSpellLeft, A_CycleSpellRight, A_CycleWeaponLeft,
-            A_CycleWeaponRight };
+            A_CycleWeaponRight, A_TogglePostProcessorHUD };
 
         return actions;
     }
