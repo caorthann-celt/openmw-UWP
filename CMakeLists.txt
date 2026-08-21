@@ -297,6 +297,7 @@ set(USED_OSG_PLUGINS
     osgdb_dds
     osgdb_freetype
     osgdb_jpeg
+    osgdb_ktx
     osgdb_osg
     osgdb_png
     osgdb_serializers_osg

@@ -644,7 +644,12 @@ std::time_t MwIniImporter::lastWriteTime(const std::filesystem::path& filename, 
     std::time_t writeTime(defaultTime);
     if (std::filesystem::exists(filename))
     {
+#if defined(OPENMW_UWP)
+        // xbox external storage does not allow canonical paths
+        std::filesystem::path resolved = filename;
+#else
         std::filesystem::path resolved = std::filesystem::canonical(filename);
+#endif
         const auto time = std::filesystem::last_write_time(resolved);
         writeTime = Misc::toTimeT(time);
 

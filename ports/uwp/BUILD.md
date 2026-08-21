@@ -64,7 +64,7 @@ $overlay = (Resolve-Path ".\ports\uwp\vcpkg-ports").Path
 
 & "$env:VCPKG_ROOT\vcpkg.exe" install `
     "boost-program-options:x64-uwp-static-md" `
-    "bullet3[double-precision]:x64-uwp-static-md" `
+    "bullet3[double-precision,multithreading]:x64-uwp-static-md" `
     "collada-dom:x64-uwp-static-md" `
     "ffmpeg[avcodec,avformat,swresample,swscale]:x64-uwp-static-md" `
     "freetype:x64-uwp-static-md" `

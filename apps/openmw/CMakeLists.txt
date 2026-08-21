@@ -184,6 +184,7 @@ if(BUILD_OPENMW)
         set(_openmw_uwp_sources
             ${CMAKE_SOURCE_DIR}/ports/uwp/main.cpp
             ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_launcher.cpp
+            ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_launcher_settings.cpp
             ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_folder_browser.cpp
             ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_mod_config.cpp
         )
@@ -191,7 +192,12 @@ if(BUILD_OPENMW)
             SKIP_PRECOMPILE_HEADERS ON
             VS_SETTINGS "CompileAsWinRT=true;LanguageStandard=stdcpp17"
         )
-        target_sources(openmw PRIVATE ${_openmw_uwp_sources})
+        set(_openmw_uwp_setup_sources
+            ${CMAKE_SOURCE_DIR}/ports/uwp/launcher/uwp_setup_wizard.cpp
+            ${CMAKE_SOURCE_DIR}/apps/mwiniimporter/importer.cpp
+        )
+        set_source_files_properties(${_openmw_uwp_setup_sources} PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
+        target_sources(openmw PRIVATE ${_openmw_uwp_sources} ${_openmw_uwp_setup_sources})
         target_link_libraries(openmw
             openmw-uwp-imgui
             windowscodecs

@@ -72,10 +72,14 @@ foreach(_config ${CMAKE_CONFIGURATION_TYPES})
     set(_root "${OpenMW_BINARY_DIR}/${_config}")
     file(GLOB_RECURSE _resources "${_root}/resources/*")
     list(APPEND _resources
+        "${_root}/resources/version"
         "${_root}/defaults.bin"
         "${_root}/gamecontrollerdb.txt"
         "${_root}/openmw.cfg"
     )
+    list(REMOVE_DUPLICATES _resources)
+
+    set_source_files_properties("${_root}/resources/version" PROPERTIES GENERATED TRUE)
 
     foreach(_file ${_resources})
         file(RELATIVE_PATH _relative "${_root}" "${_file}")
@@ -92,3 +96,7 @@ foreach(_config ${CMAKE_CONFIGURATION_TYPES})
         target_sources(openmw PRIVATE "$<$<CONFIG:${_config}>:${_file}>")
     endforeach()
 endforeach()
+
+if(TARGET get-version)
+    add_dependencies(openmw get-version)
+endif()

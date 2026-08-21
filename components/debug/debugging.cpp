@@ -135,47 +135,58 @@ namespace Debug
                     return size;
                 std::string_view msg{ str, static_cast<size_t>(size) };
 
-                // Skip debug level marker
-                Level level = All;
-                if (Log::sWriteLevel)
+                if (mAtLineStart && Log::sWriteLevel && isLevelMarker(msg[0]))
                 {
-                    level = getLevelMarker(msg[0]);
+                    mLevel = static_cast<Level>(msg[0]);
+                    mHasLevel = true;
                     msg = msg.substr(1);
                 }
 
-                char prefix[32];
-                std::size_t prefixSize;
-                {
-                    prefix[0] = '[';
-                    const auto now = std::chrono::system_clock::now();
-                    const auto time = std::chrono::system_clock::to_time_t(now);
-                    tm timeInfo{};
-#ifdef _WIN32
-                    (void)localtime_s(&timeInfo, &time);
-#else
-                    (void)localtime_r(&time, &timeInfo);
-#endif
-                    prefixSize = std::strftime(prefix + 1, sizeof(prefix) - 1, "%T", &timeInfo) + 1;
-                    char levelLetter = " EWIVD*"[int(level)];
-                    const auto ms
-                        = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-                    prefixSize += snprintf(prefix + prefixSize, sizeof(prefix) - prefixSize, ".%03u %c] ",
-                        static_cast<unsigned>(ms % 1000), levelLetter);
-                }
+                if (msg.empty())
+                    return size;
 
                 while (!msg.empty())
                 {
+                    char prefix[32];
+                    std::size_t prefixSize = 0;
+                    if (mAtLineStart)
+                    {
+                        if (!mHasLevel)
+                            mLevel = All;
+
+                        prefix[0] = '[';
+                        const auto now = std::chrono::system_clock::now();
+                        const auto time = std::chrono::system_clock::to_time_t(now);
+                        tm timeInfo{};
+#ifdef _WIN32
+                        (void)localtime_s(&timeInfo, &time);
+#else
+                        (void)localtime_r(&time, &timeInfo);
+#endif
+                        prefixSize = std::strftime(prefix + 1, sizeof(prefix) - 1, "%T", &timeInfo) + 1;
+                        const char levelLetter = " EWIVD*"[int(mLevel)];
+                        const auto ms
+                            = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+                        prefixSize += snprintf(prefix + prefixSize, sizeof(prefix) - prefixSize, ".%03u %c] ",
+                            static_cast<unsigned>(ms % 1000), levelLetter);
+                        writeImpl(prefix, prefixSize, mLevel);
+                    }
+
                     if (msg[0] == 0)
                         break;
                     size_t lineSize = 1;
                     while (lineSize < msg.size() && msg[lineSize - 1] != '\n')
                         lineSize++;
-                    writeImpl(prefix, prefixSize, level);
-                    writeImpl(msg.data(), lineSize, level);
+                    writeImpl(msg.data(), lineSize, mLevel);
                     if (logListener)
                         logListener(
-                            level, std::string_view(prefix, prefixSize), std::string_view(msg.data(), lineSize));
+                            mLevel, std::string_view(prefix, prefixSize), std::string_view(msg.data(), lineSize));
+
+                    const bool lineEnded = msg[lineSize - 1] == '\n';
                     msg = msg.substr(lineSize);
+                    mAtLineStart = lineEnded;
+                    if (lineEnded && msg.empty())
+                        mHasLevel = false;
                 }
 
                 return size;
@@ -184,17 +195,17 @@ namespace Debug
             virtual ~DebugOutputBase() = default;
 
         protected:
-            static Level getLevelMarker(char marker)
+            static bool isLevelMarker(char marker)
             {
-                if (0 <= marker && static_cast<unsigned>(marker) < static_cast<unsigned>(All))
-                    return static_cast<Level>(marker);
-                return All;
+                return 0 <= marker && static_cast<unsigned>(marker) < static_cast<unsigned>(All);
             }
 
-            virtual std::streamsize writeImpl(const char* str, std::streamsize size, Level debugLevel)
-            {
-                return size;
-            }
+            virtual std::streamsize writeImpl(const char* str, std::streamsize size, Level debugLevel) { return size; }
+
+        private:
+            Level mLevel = All;
+            bool mAtLineStart = true;
+            bool mHasLevel = false;
         };
 
 #if defined _WIN32 && defined _DEBUG

@@ -1,6 +1,8 @@
 #include "uwp_launcher.hpp"
 #include "uwp_folder_browser.hpp"
+#include "uwp_launcher_settings.hpp"
 #include "uwp_mod_config.hpp"
+#include "uwp_setup_wizard.hpp"
 
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -19,20 +21,17 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
 #include <random>
-#include <set>
-#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include <components/files/conversion.hpp>
-#include <components/settings/parser.hpp>
 
 namespace
 {
     using Microsoft::WRL::ComPtr;
+    using Uwp::SettingsStore;
 
     constexpr int sLogicalWidth = 1920;
     constexpr int sLogicalHeight = 1080;
@@ -102,6 +101,7 @@ namespace
     enum class Screen
     {
         main,
+        setup,
         modding,
         settings,
         folderBrowser
@@ -114,134 +114,6 @@ namespace
         archives
     };
 
-    // user settings
-    class SettingsStore
-    {
-    public:
-        explicit SettingsStore(const std::filesystem::path& localState)
-            : mSettingsPath(localState / "settings.cfg")
-        {
-            wchar_t modulePath[MAX_PATH] = {};
-            if (GetModuleFileNameW(nullptr, modulePath, MAX_PATH) != 0)
-            {
-                try
-                {
-                    Settings::SettingsFileParser parser;
-                    parser.loadSettingsFile(
-                        std::filesystem::path(modulePath).parent_path() / "defaults.bin", mDefaults, true, false);
-                    if (std::filesystem::exists(mSettingsPath))
-                        parser.loadSettingsFile(mSettingsPath, mUser, false, false);
-                    else
-                        mUser[{ "Video", "window mode" }] = "0";
-                    // multisampling is unstable through mesa on xbox
-                    mUser[{ "Video", "antialiasing" }] = "0";
-                    mLoaded = true;
-                }
-                catch (const std::exception&)
-                {
-                }
-            }
-        }
-
-        bool getBool(const char* category, const char* setting, bool fallback) const
-        {
-            const std::string value = getValue(category, setting, fallback ? "true" : "false");
-            return value == "true" || value == "1";
-        }
-
-        int getInt(const char* category, const char* setting, int fallback) const
-        {
-            try
-            {
-                return std::stoi(getValue(category, setting, std::to_string(fallback)));
-            }
-            catch (const std::exception&)
-            {
-                return fallback;
-            }
-        }
-
-        float getFloat(const char* category, const char* setting, float fallback) const
-        {
-            try
-            {
-                return std::stof(getValue(category, setting, serializeFloat(fallback)));
-            }
-            catch (const std::exception&)
-            {
-                return fallback;
-            }
-        }
-
-        std::string getString(const char* category, const char* setting, std::string fallback) const
-        {
-            return getValue(category, setting, std::move(fallback));
-        }
-
-        void set(const char* category, const char* setting, bool value)
-        {
-            mUser[{ category, setting }] = value ? "true" : "false";
-        }
-
-        void set(const char* category, const char* setting, int value)
-        {
-            mUser[{ category, setting }] = std::to_string(value);
-        }
-
-        void set(const char* category, const char* setting, float value)
-        {
-            mUser[{ category, setting }] = serializeFloat(value);
-        }
-
-        void set(const char* category, const char* setting, std::string_view value)
-        {
-            mUser[{ category, setting }] = value;
-        }
-
-        void set(const char* category, const char* setting, const char* value) { mUser[{ category, setting }] = value; }
-
-        bool save()
-        {
-            if (!mLoaded)
-                return false;
-            try
-            {
-                std::filesystem::create_directories(mSettingsPath.parent_path());
-                Settings::SettingsFileParser parser;
-                parser.saveSettingsFile(mSettingsPath, mUser);
-                return true;
-            }
-            catch (const std::exception&)
-            {
-                return false;
-            }
-        }
-
-    private:
-        static std::string serializeFloat(float value)
-        {
-            std::ostringstream stream;
-            stream.precision(std::numeric_limits<float>::max_digits10);
-            stream << value;
-            return stream.str();
-        }
-
-        std::string getValue(const char* category, const char* setting, std::string fallback) const
-        {
-            const auto key = std::make_pair(std::string(category), std::string(setting));
-            const auto user = mUser.find(key);
-            if (user != mUser.end())
-                return user->second;
-            const auto defaults = mDefaults.find(key);
-            return defaults != mDefaults.end() ? defaults->second : std::move(fallback);
-        }
-
-        std::filesystem::path mSettingsPath;
-        Settings::CategorySettingValueMap mDefaults;
-        Settings::CategorySettingValueMap mUser;
-        bool mLoaded = false;
-    };
-
     // shared launcher helpers
     const char* screenTitle(Screen screen)
     {
@@ -251,6 +123,8 @@ namespace
                 return "MODDING";
             case Screen::settings:
                 return "SETTINGS";
+            case Screen::setup:
+                return "SETUP WIZARD";
             case Screen::folderBrowser:
                 return "ADD DATA DIRECTORY";
             default:
@@ -594,369 +468,6 @@ namespace
         return entryPressed;
     }
 
-    // settings controls
-    void drawSettingCheckbox(
-        SettingsStore& settings, const char* label, const char* category, const char* setting, bool fallback)
-    {
-        bool value = settings.getBool(category, setting, fallback);
-        if (ImGui::Checkbox(label, &value))
-            settings.set(category, setting, value);
-    }
-
-    void drawSettingSliderInt(SettingsStore& settings, const char* label, const char* category, const char* setting,
-        int fallback, int minimum, int maximum, const char* format = "%d")
-    {
-        int value = settings.getInt(category, setting, fallback);
-        if (ImGui::SliderInt(label, &value, minimum, maximum, format))
-            settings.set(category, setting, value);
-    }
-
-    void drawSettingSliderFloat(SettingsStore& settings, const char* label, const char* category, const char* setting,
-        float fallback, float minimum, float maximum, const char* format = "%.2f")
-    {
-        float value = settings.getFloat(category, setting, fallback);
-        if (ImGui::SliderFloat(label, &value, minimum, maximum, format))
-            settings.set(category, setting, value);
-    }
-
-    void drawSettingCombo(SettingsStore& settings, const char* label, const char* category, const char* setting,
-        int fallback, const char* const items[], int count, const int* values = nullptr)
-    {
-        const int value = settings.getInt(category, setting, fallback);
-        int selected = 0;
-        for (int index = 0; index < count; ++index)
-            if ((values ? values[index] : index) == value)
-                selected = index;
-        if (ImGui::Combo(label, &selected, items, count))
-            settings.set(category, setting, values ? values[selected] : selected);
-    }
-
-    std::vector<std::string> splitLocales(const std::string& value)
-    {
-        std::vector<std::string> locales;
-        std::istringstream stream(value);
-        std::string locale;
-        while (std::getline(stream, locale, ','))
-        {
-            const size_t begin = locale.find_first_not_of(" \t");
-            const size_t end = locale.find_last_not_of(" \t");
-            if (begin != std::string::npos)
-                locales.push_back(locale.substr(begin, end - begin + 1));
-        }
-        return locales;
-    }
-
-    void saveLocales(SettingsStore& settings, const std::vector<std::string>& locales)
-    {
-        std::string value;
-        for (const std::string& locale : locales)
-        {
-            if (!value.empty())
-                value += ',';
-            value += locale;
-        }
-        settings.set("General", "preferred locales", value);
-    }
-
-    const char* languageName(const std::string& code)
-    {
-        if (code == "en")
-            return "English";
-        if (code == "fr")
-            return "French";
-        if (code == "de")
-            return "German";
-        if (code == "pl")
-            return "Polish";
-        if (code == "ru")
-            return "Russian";
-        if (code == "sv")
-            return "Swedish";
-        return code.c_str();
-    }
-
-    std::vector<std::string> findLanguages(Uwp::ModConfig& config)
-    {
-        std::vector<std::string> languages = { "en", "fr", "de", "pl", "ru", "sv" };
-        std::set<std::string> seen(languages.begin(), languages.end());
-        for (const Uwp::ModEntry& entry : config.dataDirectories())
-        {
-            const std::filesystem::path root = entry.mPath / "l10n";
-            std::error_code error;
-            std::filesystem::recursive_directory_iterator iterator(
-                root, std::filesystem::directory_options::skip_permission_denied, error);
-            const std::filesystem::recursive_directory_iterator end;
-            while (!error && iterator != end)
-            {
-                if (iterator->is_regular_file(error) && iterator->path().extension() == ".yaml")
-                {
-                    const std::string language = Files::pathToUnicodeString(iterator->path().stem());
-                    if (language != "gmst" && seen.insert(language).second)
-                        languages.push_back(language);
-                }
-                iterator.increment(error);
-            }
-        }
-        return languages;
-    }
-
-    void focusFirstSetting(bool focus)
-    {
-        if (focus)
-        {
-            ImGui::FocusItem();
-            ImGui::SetNavCursorVisible(true);
-        }
-    }
-
-    // settings pages
-    void drawDisplaySettings(SettingsStore& settings, bool focus)
-    {
-        static constexpr const char* resolutions[] = { "1280 x 720", "1920 x 1080", "2560 x 1440", "3840 x 2160" };
-        static constexpr int widths[] = { 1280, 1920, 2560, 3840 };
-        static constexpr int heights[] = { 720, 1080, 1440, 2160 };
-        const int width = settings.getInt("Video", "resolution x", 1920);
-        const int height = settings.getInt("Video", "resolution y", 1080);
-        int resolution = -1;
-        for (int index = 0; index < 4; ++index)
-            if (widths[index] == width && heights[index] == height)
-                resolution = index;
-        const std::string currentResolution
-            = resolution >= 0 ? resolutions[resolution] : std::to_string(width) + " x " + std::to_string(height);
-        if (ImGui::BeginCombo("Resolution", currentResolution.c_str()))
-        {
-            for (int index = 0; index < 4; ++index)
-            {
-                if (ImGui::Selectable(resolutions[index], resolution == index))
-                {
-                    settings.set("Video", "resolution x", widths[index]);
-                    settings.set("Video", "resolution y", heights[index]);
-                }
-            }
-            ImGui::EndCombo();
-        }
-        focusFirstSetting(focus);
-
-        static constexpr const char* windowModes[] = { "Fullscreen", "Windowed Fullscreen", "Windowed" };
-        drawSettingCombo(settings, "Window mode", "Video", "window mode", 0, windowModes, 3);
-        static constexpr const char* vsync[] = { "Off", "On", "Adaptive" };
-        drawSettingCombo(settings, "VSync", "Video", "vsync mode", 1, vsync, 3);
-        static constexpr const char* frameLimits[] = { "30 FPS", "60 FPS", "120 FPS", "Unlimited" };
-        static constexpr float frameLimitValues[] = { 30.0f, 60.0f, 120.0f, 0.0f };
-        const float frameLimit = settings.getFloat("Video", "framerate limit", 300.0f);
-        int selectedFrameLimit = -1;
-        for (int index = 0; index < 4; ++index)
-            if (frameLimit == frameLimitValues[index])
-                selectedFrameLimit = index;
-        std::ostringstream frameLimitText;
-        frameLimitText << frameLimit << " FPS";
-        const std::string customFrameLimit = frameLimitText.str();
-        const char* frameLimitPreview
-            = selectedFrameLimit >= 0 ? frameLimits[selectedFrameLimit] : customFrameLimit.c_str();
-        if (ImGui::BeginCombo("Frame limit", frameLimitPreview))
-        {
-            for (int index = 0; index < 4; ++index)
-            {
-                if (ImGui::Selectable(frameLimits[index], selectedFrameLimit == index))
-                    settings.set("Video", "framerate limit", frameLimitValues[index]);
-            }
-            ImGui::EndCombo();
-        }
-        drawSettingCheckbox(settings, "Show FPS", "UWP", "show fps", false);
-        drawSettingSliderFloat(settings, "Field of view", "Camera", "field of view", 60.0f, 30.0f, 110.0f, "%.0f");
-        drawSettingSliderFloat(settings, "Gamma", "Video", "gamma", 1.0f, 0.1f, 3.0f);
-
-        ImGui::SeparatorText("Interface");
-        drawSettingSliderFloat(settings, "UI scale", "GUI", "scaling factor", 1.0f, 0.5f, 8.0f);
-        drawSettingSliderInt(settings, "Font size", "GUI", "font size", 16, 12, 18);
-        drawSettingSliderFloat(settings, "Menu transparency", "GUI", "menu transparency", 0.84f, 0.0f, 1.0f);
-        drawSettingSliderFloat(settings, "Tooltip delay", "GUI", "tooltip delay", 0.0f, 0.0f, 1.0f);
-        drawSettingCheckbox(settings, "Stretch menu background", "GUI", "stretch menu background", false);
-        drawSettingCheckbox(settings, "Subtitles", "GUI", "subtitles", false);
-        drawSettingCheckbox(settings, "Crosshair", "HUD", "crosshair", true);
-    }
-
-    void drawGraphicsSettings(SettingsStore& settings, bool focus)
-    {
-        const bool distantTerrain = settings.getBool("Terrain", "distant terrain", false);
-        drawSettingSliderFloat(settings, "Viewing distance", "Camera", "viewing distance", 7168.0f, 2500.0f,
-            distantTerrain ? 81920.0f : 7168.0f, "%.0f");
-        focusFirstSetting(focus);
-        drawSettingCheckbox(settings, "Distant terrain", "Terrain", "distant terrain", false);
-        drawSettingCheckbox(settings, "Object paging", "Terrain", "object paging", true);
-        drawSettingCheckbox(settings, "Keep active grid loaded", "Terrain", "object paging active grid", true);
-        static constexpr const char* textureFiltering[] = { "Bilinear", "Trilinear" };
-        const std::string mipmap = settings.getString("General", "texture mipmap", "nearest");
-        int textureFilter = mipmap == "linear" ? 1 : 0;
-        if (ImGui::Combo("Texture filtering", &textureFilter, textureFiltering, 2))
-        {
-            settings.set("General", "texture mag filter", "linear");
-            settings.set("General", "texture min filter", "linear");
-            settings.set("General", "texture mipmap", textureFilter == 0 ? "nearest" : "linear");
-        }
-        static constexpr const char* anisotropy[] = { "Off", "2x", "4x", "8x", "16x" };
-        static constexpr int anisotropyValues[] = { 0, 2, 4, 8, 16 };
-        drawSettingCombo(settings, "Anisotropy", "General", "anisotropy", 4, anisotropy, 5, anisotropyValues);
-        drawSettingCheckbox(settings, "Radial fog", "Fog", "radial fog", false);
-        drawSettingCheckbox(settings, "Exponential fog", "Fog", "exponential fog", false);
-    }
-
-    void drawWaterSettings(SettingsStore& settings, bool focus)
-    {
-        drawSettingCheckbox(settings, "Water shaders", "Water", "shader", false);
-        focusFirstSetting(focus);
-        drawSettingCheckbox(settings, "Refraction", "Water", "refraction", false);
-        drawSettingCheckbox(settings, "Sunlight scattering", "Water", "sunlight scattering", true);
-        drawSettingCheckbox(settings, "Wobbly shores", "Water", "wobbly shores", true);
-        static constexpr const char* waterTexture[] = { "Low (512)", "Medium (1024)", "High (2048)" };
-        static constexpr int waterTextureValues[] = { 512, 1024, 2048 };
-        drawSettingCombo(settings, "Water texture", "Water", "rtt size", 512, waterTexture, 3, waterTextureValues);
-        static constexpr const char* reflectionDetail[]
-            = { "Sky", "Terrain", "World", "Objects", "Actors", "Groundcover" };
-        drawSettingCombo(settings, "Reflection detail", "Water", "reflection detail", 2, reflectionDetail, 6);
-        static constexpr const char* rainRipples[] = { "Simple", "Sparse", "Dense" };
-        drawSettingCombo(settings, "Rain ripple detail", "Water", "rain ripple detail", 1, rainRipples, 3);
-    }
-
-    void drawLightingSettings(SettingsStore& settings, bool focus)
-    {
-        drawSettingCheckbox(settings, "Force per-pixel lighting", "Shaders", "force per pixel lighting", false);
-        focusFirstSetting(focus);
-        drawSettingCheckbox(settings, "Particle point lighting", "Shaders", "particle point lighting", true);
-        drawSettingCheckbox(settings, "Clamp lighting", "Shaders", "clamp lighting", true);
-        drawSettingCheckbox(settings, "Match sunlight to sun", "Shaders", "match sunlight to sun", false);
-        drawSettingCheckbox(settings, "Classic light falloff", "Shaders", "classic falloff", false);
-        static constexpr const char* maxLights[] = { "8", "16", "24", "32", "40", "48", "56", "64" };
-        static constexpr int maxLightValues[] = { 8, 16, 24, 32, 40, 48, 56, 64 };
-        drawSettingCombo(settings, "Maximum lights", "Shaders", "max lights", 16, maxLights, 8, maxLightValues);
-        drawSettingSliderFloat(
-            settings, "Maximum light distance", "Shaders", "maximum light distance", 8192.0f, 0.0f, 8192.0f, "%.0f");
-        drawSettingSliderFloat(
-            settings, "Light radius multiplier", "Shaders", "light radius multiplier", 1.75f, 1.0f, 5.0f);
-        drawSettingSliderFloat(
-            settings, "Minimum interior brightness", "Shaders", "minimum interior brightness", 0.08f, 0.0f, 1.0f);
-
-        ImGui::SeparatorText("Shadows and effects");
-        drawSettingCheckbox(settings, "Shadows", "Shadows", "enable shadows", false);
-        drawSettingCheckbox(settings, "Actor shadows", "Shadows", "actor shadows", false);
-        drawSettingCheckbox(settings, "Player shadows", "Shadows", "player shadows", false);
-        drawSettingCheckbox(settings, "Object shadows", "Shadows", "object shadows", false);
-        drawSettingCheckbox(settings, "Terrain shadows", "Shadows", "terrain shadows", false);
-        static constexpr const char* shadowResolution[] = { "512", "1024", "2048", "4096" };
-        static constexpr int shadowResolutionValues[] = { 512, 1024, 2048, 4096 };
-        drawSettingCombo(settings, "Shadow resolution", "Shadows", "shadow map resolution", 1024, shadowResolution, 4,
-            shadowResolutionValues);
-        drawSettingCheckbox(settings, "Post processing", "Post Processing", "enabled", false);
-    }
-
-    void drawInputSettings(SettingsStore& settings, bool focus)
-    {
-        drawSettingCheckbox(settings, "Controller enabled", "Input", "enable controller", true);
-        focusFirstSetting(focus);
-        drawSettingCheckbox(settings, "Controller menus", "GUI", "controller menus", true);
-        drawSettingCheckbox(settings, "Controller tooltips", "GUI", "controller tooltips", true);
-        drawSettingSliderFloat(settings, "Look sensitivity", "Input", "camera sensitivity", 1.0f, 0.2f, 5.0f);
-        drawSettingCheckbox(settings, "Invert horizontal look", "Input", "invert x axis", false);
-        drawSettingCheckbox(settings, "Invert vertical look", "Input", "invert y axis", false);
-        drawSettingSliderFloat(settings, "Menu cursor speed", "Input", "gamepad cursor speed", 1.0f, 0.25f, 3.0f);
-        drawSettingSliderFloat(settings, "Stick dead zone", "Input", "joystick dead zone", 0.1f, 0.0f, 0.5f);
-        drawSettingCheckbox(settings, "Map zoom", "Map", "allow zooming", false);
-    }
-
-    void drawGameplaySettings(SettingsStore& settings, bool focus)
-    {
-        drawSettingSliderInt(settings, "Difficulty", "Game", "difficulty", 0, -100, 100);
-        focusFirstSetting(focus);
-        drawSettingSliderInt(settings, "Actor processing range", "Game", "actors processing range", 7168, 3584, 7168);
-        drawSettingCheckbox(settings, "Autosave when resting", "Saves", "autosave", true);
-        drawSettingCheckbox(settings, "Always use best attack", "Game", "best attack", false);
-        drawSettingCheckbox(settings, "Show effect duration", "Game", "show effect duration", false);
-        drawSettingCheckbox(settings, "Show enchant chance", "Game", "show enchant chance", false);
-        drawSettingCheckbox(settings, "Show melee information", "Game", "show melee info", false);
-        drawSettingCheckbox(settings, "Show projectile damage", "Game", "show projectile damage", false);
-        drawSettingCheckbox(settings, "Graphic herbalism", "Game", "graphic herbalism", true);
-        drawSettingCheckbox(settings, "Weapon sheathing", "Game", "weapon sheathing", false);
-        drawSettingCheckbox(settings, "Shield sheathing", "Game", "shield sheathing", false);
-        drawSettingCheckbox(settings, "Smooth animation transitions", "Game", "smooth animation transitions", false);
-        drawSettingCheckbox(settings, "Smooth movement", "Game", "smooth movement", false);
-        drawSettingCheckbox(settings, "Turn to movement direction", "Game", "turn to movement direction", false);
-        drawSettingCheckbox(settings, "NPCs avoid collisions", "Game", "NPCs avoid collisions", false);
-        drawSettingCheckbox(settings, "Day and night switches", "Game", "day night switches", true);
-        drawSettingCheckbox(settings, "Loot during death animation", "Game", "can loot during death animation", true);
-        drawSettingCheckbox(settings, "Followers attack on sight", "Game", "followers attack on sight", false);
-        drawSettingCheckbox(settings, "Normalise race speed", "Game", "normalise race speed", false);
-        drawSettingCheckbox(settings, "Uncapped damage fatigue", "Game", "uncapped damage fatigue", false);
-        drawSettingSliderInt(settings, "Maximum quicksaves", "Saves", "max quicksaves", 1, 1, 99);
-    }
-
-    void drawAudioSettings(SettingsStore& settings, bool focus)
-    {
-        drawSettingSliderFloat(settings, "Master volume", "Sound", "master volume", 1.0f, 0.0f, 1.0f);
-        focusFirstSetting(focus);
-        drawSettingSliderFloat(settings, "Music volume", "Sound", "music volume", 0.5f, 0.0f, 1.0f);
-        drawSettingSliderFloat(settings, "Effects volume", "Sound", "sfx volume", 1.0f, 0.0f, 1.0f);
-        drawSettingSliderFloat(settings, "Voice volume", "Sound", "voice volume", 0.8f, 0.0f, 1.0f);
-        drawSettingSliderFloat(settings, "Footsteps volume", "Sound", "footsteps volume", 0.2f, 0.0f, 1.0f);
-        static constexpr const char* hrtf[] = { "Auto", "Off", "On" };
-        static constexpr int hrtfValues[] = { -1, 0, 1 };
-        drawSettingCombo(settings, "HRTF", "Sound", "hrtf enable", -1, hrtf, 3, hrtfValues);
-        drawSettingCheckbox(settings, "Camera-based audio", "Sound", "camera listener", false);
-        drawSettingSliderFloat(settings, "Doppler effect", "Sound", "doppler factor", 0.25f, 0.0f, 1.0f);
-    }
-
-    void drawLanguageSettings(SettingsStore& settings, Uwp::ModConfig& config, bool focus)
-    {
-        std::vector<std::string> locales = splitLocales(settings.getString("General", "preferred locales", "en"));
-        if (locales.empty())
-            locales.push_back("en");
-        static std::vector<std::string> languages;
-        if (focus || languages.empty())
-            languages = findLanguages(config);
-        for (const std::string& locale : locales)
-        {
-            if (std::find(languages.begin(), languages.end(), locale) == languages.end())
-                languages.push_back(locale);
-        }
-
-        if (ImGui::BeginCombo("Primary language", languageName(locales[0])))
-        {
-            for (const std::string& language : languages)
-            {
-                if (ImGui::Selectable(languageName(language), locales[0] == language))
-                {
-                    locales[0] = language;
-                    saveLocales(settings, locales);
-                }
-            }
-            ImGui::EndCombo();
-        }
-        focusFirstSetting(focus);
-
-        const char* secondaryPreview = locales.size() > 1 ? languageName(locales[1]) : "None";
-        if (ImGui::BeginCombo("Secondary language", secondaryPreview))
-        {
-            if (ImGui::Selectable("None", locales.size() == 1))
-            {
-                locales.resize(1);
-                saveLocales(settings, locales);
-            }
-            for (const std::string& language : languages)
-            {
-                const bool selected = locales.size() > 1 && locales[1] == language;
-                if (ImGui::Selectable(languageName(language), selected))
-                {
-                    if (locales.size() > 1)
-                        locales[1] = language;
-                    else
-                        locales.push_back(language);
-                    saveLocales(settings, locales);
-                }
-            }
-            ImGui::EndCombo();
-        }
-        drawSettingCheckbox(settings, "Strings from ESM files have priority", "General", "gmst overrides l10n", true);
-    }
-
     void drawTabStrip(const char* const labels[], int count, int selectedTab)
     {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
@@ -983,8 +494,9 @@ namespace
     void drawSettingsScreen(SettingsStore& settings, Uwp::ModConfig& config, int selectedTab, bool& focusSettings,
         const ControllerIcons& icons)
     {
-        static constexpr const char* tabs[]
-            = { "Display", "Graphics", "Water", "Lighting", "Input", "Gameplay", "Audio", "Language" };
+        const char* tabs[Uwp::settingsTabCount] = {};
+        for (int index = 0; index < Uwp::settingsTabCount; ++index)
+            tabs[index] = Uwp::settingsTabLabel(index);
         ImGui::BeginChild("settings", ImVec2(0.0f, ImGui::GetContentRegionAvail().y - 34.0f), ImGuiChildFlags_Borders,
             ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -996,7 +508,7 @@ namespace
         hintX = ImGui::GetWindowPos().x + ImGui::GetWindowSize().x - ImGui::GetStyle().WindowPadding.x - rightHintWidth;
         drawHint(ImGui::GetWindowDrawList(), hintX, hintY, icons.mRightShoulder, "RB", "Next tab");
         ImGui::Dummy(ImVec2(0.0f, 26.0f));
-        drawTabStrip(tabs, 8, selectedTab);
+        drawTabStrip(tabs, Uwp::settingsTabCount, selectedTab);
 
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24.0f, 14.0f));
         ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
@@ -1004,33 +516,7 @@ namespace
         ImGui::BeginChild("settings-options", ImVec2(0.0f, 0.0f), ImGuiChildFlags_NavFlattened);
         ImGui::PopStyleColor();
         ImGui::PopStyleVar();
-        switch (selectedTab)
-        {
-            case 0:
-                drawDisplaySettings(settings, focusSettings);
-                break;
-            case 1:
-                drawGraphicsSettings(settings, focusSettings);
-                break;
-            case 2:
-                drawWaterSettings(settings, focusSettings);
-                break;
-            case 3:
-                drawLightingSettings(settings, focusSettings);
-                break;
-            case 4:
-                drawInputSettings(settings, focusSettings);
-                break;
-            case 5:
-                drawGameplaySettings(settings, focusSettings);
-                break;
-            case 6:
-                drawAudioSettings(settings, focusSettings);
-                break;
-            case 7:
-                drawLanguageSettings(settings, config, focusSettings);
-                break;
-        }
+        Uwp::drawSettingsPage(settings, config, selectedTab, focusSettings);
         focusSettings = false;
         ImGui::EndChild();
         ImGui::PopID();
@@ -1038,43 +524,63 @@ namespace
     }
 
     // launcher pages
-    bool drawMainButton(const char* label, const ImVec2& size, bool requestFocus)
+    bool drawMainButton(const char* label, const ImVec2& size, bool requestFocus, bool selected, bool& focused)
     {
         if (requestFocus)
             ImGui::SetKeyboardFocusHere();
+        if (selected)
+            ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonHovered));
         ImGui::PushStyleColor(ImGuiCol_NavCursor, IM_COL32(0, 0, 0, 0));
         const bool pressed = ImGui::Button(label, size);
         ImGui::PopStyleColor();
-        if (ImGui::IsItemFocused())
-            ImGui::GetWindowDrawList()->AddRect(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(),
-                ImGui::GetColorU32(ImGuiCol_NavCursor), ImGui::GetStyle().FrameRounding, 0, 2.0f);
+        if (selected)
+            ImGui::PopStyleColor();
+        focused = ImGui::IsItemFocused();
         return pressed;
     }
 
-    void drawMainScreen(Screen& screen, bool& focusMain, bool& focusModding, bool& focusModActions, bool& focusSettings,
-        bool& running, bool& launch)
+    void drawMainScreen(Screen& screen, Uwp::SetupWizard& wizard, int& mainSelection, bool& focusMain,
+        bool& focusModding, bool& focusModActions, bool& focusSettings, bool& running, bool& launch)
     {
         const float width = 320.0f;
-        const float height = 4.0f * 48.0f + 3.0f * ImGui::GetStyle().ItemSpacing.y;
+        const float height = 5.0f * 48.0f + 4.0f * ImGui::GetStyle().ItemSpacing.y;
         ImGui::SetCursorPosX((ImGui::GetContentRegionAvail().x - width) * 0.5f);
         ImGui::SetCursorPosY((ImGui::GetWindowHeight() - height) * 0.5f);
         ImGui::BeginGroup();
-        if (drawMainButton("Start Game", ImVec2(width, 48.0f), focusMain))
+        if (focusMain)
+            mainSelection = 0;
+        bool focused = false;
+        if (drawMainButton("Start Game", ImVec2(width, 48.0f), focusMain, mainSelection == 0, focused))
             launch = true;
+        if (focused)
+            mainSelection = 0;
         focusMain = false;
-        if (drawMainButton("Modding", ImVec2(width, 48.0f), false))
+        if (drawMainButton("Setup Wizard", ImVec2(width, 48.0f), false, mainSelection == 1, focused))
+        {
+            wizard.open();
+            screen = Screen::setup;
+        }
+        if (focused)
+            mainSelection = 1;
+        if (drawMainButton("Modding", ImVec2(width, 48.0f), false, mainSelection == 2, focused))
         {
             screen = Screen::modding;
             focusModding = true;
             focusModActions = false;
         }
-        if (drawMainButton("Settings", ImVec2(width, 48.0f), false))
+        if (focused)
+            mainSelection = 2;
+        if (drawMainButton("Settings", ImVec2(width, 48.0f), false, mainSelection == 3, focused))
         {
             screen = Screen::settings;
             focusSettings = true;
         }
-        if (drawMainButton("Exit", ImVec2(width, 48.0f), false))
+        if (focused)
+            mainSelection = 3;
+        if (drawMainButton("Exit", ImVec2(width, 48.0f), false, mainSelection == 4, focused))
             running = false;
+        if (focused)
+            mainSelection = 4;
         ImGui::EndGroup();
     }
 
@@ -1281,12 +787,12 @@ namespace
     }
 
     // launcher frame
-    void drawLauncher(Screen& screen, Uwp::ModConfig& config, Uwp::FolderBrowser& browser, SettingsStore& settings,
-        ModTab selectedModTab, int selectedSettingsTab, int& dataSelection, int& contentSelection,
-        int& archiveSelection, int& browserSelection, bool& focusMain, bool& focusModding, bool& focusBrowser,
-        bool& focusModActions, bool& scrollModSelection, bool& focusBrowserActions, bool& focusSettings,
-        const std::filesystem::path& localState, MarqueeState& marquee, const Texture& background, const Texture& logo,
-        const ControllerIcons& icons, bool& running, bool& launch)
+    void drawLauncher(Screen& screen, Uwp::ModConfig& config, Uwp::FolderBrowser& browser, Uwp::SetupWizard& wizard,
+        SettingsStore& settings, ModTab selectedModTab, int selectedSettingsTab, int& mainSelection, int& dataSelection,
+        int& contentSelection, int& archiveSelection, int& browserSelection, bool& focusMain, bool& focusModding,
+        bool& focusBrowser, bool& focusModActions, bool& scrollModSelection, bool& focusBrowserActions,
+        bool& focusSettings, const std::filesystem::path& localState, MarqueeState& marquee, const Texture& background,
+        const Texture& logo, const ControllerIcons& icons, bool& running, bool& launch)
     {
         ImGuiIO& io = ImGui::GetIO();
         drawBackground(background);
@@ -1310,7 +816,16 @@ namespace
         }
 
         if (screen == Screen::main)
-            drawMainScreen(screen, focusMain, focusModding, focusModActions, focusSettings, running, launch);
+            drawMainScreen(screen, wizard, mainSelection, focusMain, focusModding, focusModActions, focusSettings,
+                running, launch);
+        else if (screen == Screen::setup)
+        {
+            if (wizard.draw(config))
+            {
+                screen = Screen::main;
+                focusMain = true;
+            }
+        }
         else if (screen == Screen::settings)
             drawSettingsScreen(settings, config, selectedSettingsTab, focusSettings, icons);
         else if (screen == Screen::modding)
@@ -1324,7 +839,7 @@ namespace
         const float hintY = io.DisplaySize.y - 34.0f;
         drawHint(ImGui::GetWindowDrawList(), hintX, hintY, icons.mA, "A", "Select");
         drawHint(ImGui::GetWindowDrawList(), hintX, hintY, icons.mB, "B", screen == Screen::main ? "Exit" : "Back");
-        if (screen != Screen::main)
+        if (screen != Screen::main && screen != Screen::setup)
             drawHint(ImGui::GetWindowDrawList(), hintX, hintY, icons.mMenu, "Menu", "Start");
         if (screen == Screen::modding || screen == Screen::folderBrowser)
             drawHint(ImGui::GetWindowDrawList(), hintX, hintY, icons.mDpad, "D-pad", "Switch column");
@@ -1338,6 +853,7 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
 {
     ModConfig config(localState);
     FolderBrowser browser(localState);
+    SetupWizard wizard(localState);
     SettingsStore settings(localState);
     if (!config.load())
         return LauncherResult::failed;
@@ -1394,8 +910,10 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO();
-    io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+    io.ConfigFlags
+        |= ImGuiConfigFlags_NavEnableGamepad | ImGuiConfigFlags_NoMouse | ImGuiConfigFlags_NoMouseCursorChange;
     io.IniFilename = nullptr;
+    SDL_ShowCursor(SDL_DISABLE);
     // use the morrowind font with a fallback for missing glyphs
     const std::string fontPath
         = Files::pathToUnicodeString(package / "resources" / "vfs" / "fonts" / "MysticCards.ttf");
@@ -1412,9 +930,13 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
     ImGui_ImplSDL2_InitForOpenGL(window, context);
     ImGui_ImplOpenGL2_Init();
 
-    Screen screen = Screen::main;
+    const bool needsSetup = !std::filesystem::is_regular_file(localState / "openmw.cfg");
+    Screen screen = needsSetup ? Screen::setup : Screen::main;
+    if (needsSetup)
+        wizard.open();
     ModTab selectedModTab = ModTab::data;
     int selectedSettingsTab = 0;
+    int mainSelection = 0;
     int dataSelection = -1;
     int contentSelection = -1;
     int archiveSelection = -1;
@@ -1455,6 +977,14 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
                 focusBrowserActions = false;
             }
         }
+        else if (screen == Screen::setup)
+        {
+            if (!wizard.back())
+            {
+                screen = Screen::main;
+                focusMain = true;
+            }
+        }
         else
         {
             screen = Screen::main;
@@ -1490,7 +1020,8 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
                         goBack();
                         break;
                     case SDL_CONTROLLER_BUTTON_START:
-                        launch = true;
+                        if (screen != Screen::setup)
+                            launch = true;
                         break;
                     case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
                         if (screen == Screen::modding)
@@ -1519,7 +1050,8 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
                     case SDL_CONTROLLER_BUTTON_LEFTSHOULDER:
                         if (screen == Screen::settings)
                         {
-                            selectedSettingsTab = (selectedSettingsTab + 7) % 8;
+                            selectedSettingsTab
+                                = (selectedSettingsTab + Uwp::settingsTabCount - 1) % Uwp::settingsTabCount;
                             focusSettings = true;
                         }
                         else if (screen == Screen::modding)
@@ -1533,7 +1065,7 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
                     case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
                         if (screen == Screen::settings)
                         {
-                            selectedSettingsTab = (selectedSettingsTab + 1) % 8;
+                            selectedSettingsTab = (selectedSettingsTab + 1) % Uwp::settingsTabCount;
                             focusSettings = true;
                         }
                         else if (screen == Screen::modding)
@@ -1560,8 +1092,8 @@ Uwp::LauncherResult Uwp::runLauncher(const std::filesystem::path& localState)
         io.DisplayFramebufferScale = ImVec2(
             static_cast<float>(drawableWidth) / sLogicalWidth, static_cast<float>(drawableHeight) / sLogicalHeight);
         ImGui::NewFrame();
-        drawLauncher(screen, config, browser, settings, selectedModTab, selectedSettingsTab, dataSelection,
-            contentSelection, archiveSelection, browserSelection, focusMain, focusModding, focusBrowser,
+        drawLauncher(screen, config, browser, wizard, settings, selectedModTab, selectedSettingsTab, mainSelection,
+            dataSelection, contentSelection, archiveSelection, browserSelection, focusMain, focusModding, focusBrowser,
             focusModActions, scrollModSelection, focusBrowserActions, focusSettings, localState, marquee, background,
             logo, icons, running, launch);
         ImGui::Render();

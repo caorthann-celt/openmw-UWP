@@ -5,7 +5,7 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap mp rescap">
-  <Identity Name="OpenMW" Publisher="CN=Caorthann" Version="1.0.0.54" />
+  <Identity Name="OpenMW" Publisher="CN=Caorthann" Version="1.0.0.60" />
   <mp:PhoneIdentity PhoneProductId="9201C1C6-57DF-3BF5-BABC-FF43AB165BBF" PhonePublisherId="00000000-0000-0000-0000-000000000000" />
   <Properties>
     <DisplayName>OpenMW</DisplayName>

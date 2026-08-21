@@ -10,7 +10,6 @@ int main(int argc, char* argv[]);
 
 static int RunOpenMW(int argc, char* argv[])
 {
-    Files::ensureUwpUserConfig();
     const std::filesystem::path localState = Files::getUwpLocalStatePath();
     const Uwp::LauncherResult result = Uwp::runLauncher(localState);
     if (result == Uwp::LauncherResult::cancel)
